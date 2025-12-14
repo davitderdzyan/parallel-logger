@@ -5,8 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const worker_threads_1 = require("worker_threads");
 const http_1 = __importDefault(require("http"));
-if (!worker_threads_1.parentPort)
-    throw new Error("Must run as worker thread");
+// if (!worker_threads_1.parentPort)
+//     throw new Error("Must run as worker thread");
 const PORT = 4000;
 const server = http_1.default.createServer((req, res) => {
     if (req.method === "POST" && req.url === "/log") {

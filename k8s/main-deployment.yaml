@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: main-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: main-app
+  template:
+    metadata:
+      labels:
+        app: main-app
+    spec:
+      containers:
+        - name: main
+          image: davitderdzyan/parallel-logger.latest:latest
+          command: ["node", "dist/main.js"]
+          ports:
+            - containerPort: 4000
+          volumeMounts:
+            - name: data-volume
+              mountPath: /usr/src/app/data
+          env:
+            - name: RABBITMQ_HOST
+              value: rabbitmq
+      volumes:
+        - name: data-volume
+          emptyDir: {}
+
+

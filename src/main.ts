@@ -50,7 +50,7 @@ async function startWorker() {
     }
   });
 
-  server.listen(PORT, () => console.log(`Worker HTTP server running on port ${PORT}`));
+  server.listen(PORT, "0.0.0.0", () => console.log(`Worker HTTP server running on port ${PORT}`));
 }
 
 startWorker();
