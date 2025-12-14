@@ -1,0 +1,28 @@
+services:
+  main:
+    build: .
+    command: node dist/main.js
+    ports:
+      - "4000:4000"
+    depends_on:
+      - rabbitmq
+    volumes:
+      - ./data:/usr/src/app/data
+
+  worker:
+    build: .
+    command: node dist/worker.js
+    ports:
+      - "4001:4001"
+    depends_on:
+      - rabbitmq
+    volumes:
+      - ./data:/usr/src/app/data
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest

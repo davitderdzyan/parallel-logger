@@ -1,43 +1,56 @@
-import { Worker } from "worker_threads";
-import fs from "fs";
-import path from "path";
+import http from "http";
+import amqp from "amqplib";
+import { db } from "./db";
+const PORT = 4000;
+const QUEUE_NAME = "logs";
+const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://guest:guest@rabbitmq:5672";
 
-const logFile = path.join(__dirname, "logs.txt");
-const workerPath = path.resolve(__dirname, "worker.ts");
-const worker = new Worker(workerPath, {
-  execArgv: ["-r", "ts-node/register"],
-});
+db.prepare("CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, message TEXT, timestamp TEXT)").run();
 
-let writing = false;
-const logQueue: string[] = [];
+async function startWorker() {
+  let channel: amqp.Channel | null = null;
 
-// Listen for logs from the worker
-worker.on("message", async (msg) => {
-  if (msg.type === "log") {
-    logQueue.push(msg.data);
-    await processQueue();
-  }
-});
-
-async function processQueue() {
-  if (writing) return;
-  writing = true;
-
-  while (logQueue.length > 0) {
-    const message = logQueue.shift()!;
-    await writeToFile(message);
+  while (!channel) {
+    try {
+      const conn = await amqp.connect(RABBITMQ_URL);
+      channel = await conn.createChannel();
+      await channel.assertQueue(QUEUE_NAME, { durable: true });
+      console.log("Worker connected to RabbitMQ");
+    } catch {
+      console.log("RabbitMQ not ready, retrying...");
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    console.log("Still in loop...");
   }
 
-  writing = false;
-}
 
-function writeToFile(message: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fs.appendFile(logFile, message + "\n", (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
+  const server = http.createServer((req, res) => {
+    if (req.method === "POST" && req.url === "/log") {
+      let body = "";
+      req.on("data", chunk => body += chunk);
+      req.on("end", () => {
+        try {
+          const { message } = JSON.parse(body);
+          const timestamp = new Date().toISOString();
+          channel!.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify({ message, timestamp })), { persistent: true });
+          res.writeHead(200);
+          res.end("Logged\n");
+        } catch {
+          res.writeHead(400);
+          res.end("Invalid JSON\n");
+        }
+      });
+    } else if (req.method === "GET" && req.url === "/logs") {
+      const logs = db.prepare("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 100").all();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(logs));
+    } else {
+      res.writeHead(404);
+      res.end("Not Found\n");
+    }
   });
+
+  server.listen(PORT, () => console.log(`Worker HTTP server running on port ${PORT}`));
 }
 
-console.log("Main logger started. Waiting for log messages...");
+startWorker();

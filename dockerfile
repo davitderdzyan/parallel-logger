@@ -8,7 +8,7 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install --production
+RUN npm install 
 
 # Copy source code
 COPY . .
@@ -20,4 +20,4 @@ RUN npm run build
 EXPOSE 4000
 
 # Start the service
-CMD ["npm", "start"]
+CMD ["node", "dist/main.js"]

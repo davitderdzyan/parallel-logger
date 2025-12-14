@@ -1,30 +1,36 @@
-import { parentPort } from "worker_threads";
-import http from "http";
+import Database from "better-sqlite3";
+import amqp from "amqplib";
+import path from "path";
+import {db } from "./db";
+db.prepare("CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, message TEXT, timestamp TEXT)").run();
 
-if (!parentPort) throw new Error("Must run as worker thread");
+const QUEUE_NAME = "logs";
+const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://guest:guest@rabbitmq:5672";
 
-const PORT = 4000;
+async function startConsumer() {
+  let channel: amqp.Channel | null = null;
 
-const server = http.createServer((req, res) => {
-  if (req.method === "POST" && req.url === "/log") {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", () => {
-      try {
-        const { message } = JSON.parse(body);
-        const time = new Date().toISOString();
-        parentPort!.postMessage({ type: "log", data: `[${time}] ${message}` });
-        res.writeHead(200);
-        res.end("Logged\n");
-      } catch (err) {
-        res.writeHead(400);
-        res.end("Invalid JSON\n");
-      }
-    });
-  } else {
-    res.writeHead(404);
-    res.end("Not Found");
+  while (!channel) {
+    try {
+      const conn = await amqp.connect(RABBITMQ_URL);
+      channel = await conn.createChannel();
+      await channel.assertQueue(QUEUE_NAME, { durable: true });
+      console.log("Consumer connected to RabbitMQ");
+    } catch {
+      console.log("RabbitMQ not ready, retrying...");
+      await new Promise(r => setTimeout(r, 2000));
+    }
   }
-});
 
-server.listen(PORT, () => console.log(`Worker API running on port ${PORT}`));
+  channel.consume(QUEUE_NAME, (msg) => {
+    if (msg) {
+      console.log("Received log:", msg.content.toString());
+      const { message, timestamp } = JSON.parse(msg.content.toString());
+      db.prepare("INSERT INTO logs (message, timestamp) VALUES (?, ?)").run(message, timestamp);
+      console.log("Saved log:", message);
+      channel!.ack(msg);
+    }
+  });
+}
+
+startConsumer();
